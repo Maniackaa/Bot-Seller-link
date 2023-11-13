@@ -1,0 +1,69 @@
+version: '3'
+
+volumes:
+  pg_data:
+  pgadmin_data:
+  redis_data:
+
+services:
+  db_postgres:
+    container_name: db_seller
+    image: postgres:14-alpine
+    env_file: .env
+    volumes:
+      - ./postgres/init_db:/docker-entrypoint-initdb.d
+#      - ./postgres/postgres-data.conf/:/var/lib/postgresql/data
+#      - pg_data:/var/lib/postgresql/data
+      - ./postgres/postgres-data/:/var/lib/postgresql/data
+    ports:
+      - "25432:5432"
+    restart: always
+
+
+#  pgadmin:
+#    container_name: pgadmin_container_seller
+#    env_file: .env
+#    environment:
+#      PGADMIN_DEFAULT_EMAIL: $PGADMIN_DEFAULT_EMAIL
+#      PGADMIN_DEFAULT_PASSWORD: $PGADMIN_DEFAULT_PASSWORD
+#
+#    depends_on:
+#      - db_postgres
+#    volumes:
+#      - pgadmin_data:/var/lib/pgadmin
+#    ports:
+#      - "5050:80"
+#    restart: always
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: '0.5'
+#          memory: 1G
+
+#  redis:
+#    container_name: redis_seller
+#    image: redis:latest
+#    restart: always
+#    environment:
+#      - REDIS_PASSWORD=$REDIS_PASSWORD
+#      - REDIS_PORT=$REDIS_PORT
+#      - REDIS_DATABASES=16
+#    entrypoint: redis-server --appendonly yes --requirepass $REDIS_PASSWORD --maxmemory 512mb --maxmemory-policy allkeys-lru
+#    networks:
+#      - default
+#    ports:
+#      - "6379:6379"
+#    volumes:
+##      - ./redis/data:/data
+#      - ./redis/etc/redis.conf:/usr/local/etc/redis/redis.conf
+#      - redis_data:/data
+
+  bot-seller:
+    restart: always
+    build: .
+    env_file: .env
+    depends_on:
+#      - redis
+      - db_postgres
+    volumes:
+      - ./:/app
