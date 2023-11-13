@@ -4,7 +4,7 @@ import datetime
 from sqlalchemy import select, delete
 
 from config_data.bot_conf import get_my_loggers
-from database.db import Session, User, Request, Link, WorkLinkRequest, WorkLink
+from database.db import Session, User, Request, Link, WorkLinkRequest, WorkLink, CashOut
 
 logger, err_log = get_my_loggers()
 
@@ -151,6 +151,25 @@ def get_work_request_from_id(pk) -> WorkLinkRequest:
         q = select(WorkLinkRequest).filter(WorkLinkRequest.id == pk)
         reg = session.execute(q).scalars().one_or_none()
         return reg
+
+
+def create_cash_outs(user_id, cost) -> int:
+    session = Session()
+    with session:
+        cash_out = CashOut(user_id=user_id, cost=cost)
+        session.add(cash_out)
+        session.commit()
+        logger.debug('Запрос на вывод сохранен')
+        return cash_out.id
+
+
+def get_cash_out_from_id(pk) -> CashOut:
+    session = Session()
+    with session:
+        q = select(CashOut).filter(CashOut.id == pk)
+        cash_out = session.execute(q).scalars().one_or_none()
+        return cash_out
+
 
 if __name__ == '__main__':
     pass

@@ -13,7 +13,7 @@ from handlers.new_user import FSMCheckUser
 from keyboards.keyboards import start_kb, contact_kb, admin_start_kb, custom_kb, menu_kb, kb_list
 from lexicon.lexicon import LEXICON
 from services.db_func import get_or_create_user, update_user, create_links, get_link_from_id, create_work_link_request, \
-    get_work_request_from_id
+    get_work_request_from_id, create_cash_outs, get_cash_out_from_id
 from services.func import get_all_time_cash, get_all_worked_link
 
 logger, err_log = get_my_loggers()
@@ -33,6 +33,9 @@ router.message.filter(IsPrivate())
 
 class FSMUser(StatesGroup):
     send_link = State()
+
+class FSMCash(StatesGroup):
+    cost = State()
 
 
 @router.message(Command(commands=["start"]))
@@ -147,7 +150,7 @@ async def send_link(message: Message, state: FSMContext, bot: Bot):
     text += f'Кол-во ссылок: {len(links)}\n{links_text}'
     btn = {
         'Заказать выплату': 'cash_out',
-        'Пополнить баланс': 'cash_in',
+        # 'Пополнить баланс': 'cash_in',
         'Назад': 'cancel'
     }
     await message.answer(text=text, reply_markup=custom_kb(1, btn))
@@ -265,3 +268,62 @@ async def sell_account_confirm(callback: CallbackQuery, state: FSMContext, bot: 
     work_request.set('msg', msg.model_dump_json())
     await callback.message.answer('Ваша заявка отправлена')
     await callback.message.delete()
+
+
+# Запрос на вывод средств
+@router.callback_query(F.data == 'cash_out')
+async def sell_account_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    btn = {
+        'Подтвердить': 'cash_out_confirm',
+        'Отменить': 'cancel'
+    }
+    user = get_or_create_user(callback.from_user)
+
+    cash = user.cash
+    text = f'Ваш баланс: {cash}\nОставить заявку на вывод?'
+    if cash >= 1000:
+        await callback.message.edit_text(text, reply_markup=custom_kb(2, btn))
+    else:
+        await callback.message.answer('Минимальная сумма вывода 1000 р.')
+
+
+@router.callback_query(F.data == 'cash_out_confirm')
+async def cash_conf(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    await callback.message.delete()
+    await state.set_state(FSMCash.cost)
+    await callback.message.answer('Введите сумму')
+
+
+@router.message(StateFilter(FSMCash.cost))
+async def cash_cost(message: Message, state: FSMContext):
+    cost = message.text.strip()
+    try:
+        cost = int(cost)
+        if cost >= 1000:
+            btn = {
+                'Подтвердить': f'cash_out_send',
+                'Отменить': 'cancel'
+            }
+            await state.update_data(cost=cost)
+            await message.answer(f'Отправить заявку на вывод {cost} р.?', reply_markup=custom_kb(2, btn))
+        else:
+            await message.answer(f'Сумма должна быть не менее 1000 р.')
+    except Exception as err:
+        await message.answer('Некорректная сумма. Введите корректную сумму')
+
+
+@router.callback_query(F.data == 'cash_out_send')
+async def cash_conf(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    await callback.message.delete()
+    data = await state.get_data()
+    cost = data['cost']
+    user = get_or_create_user(callback.from_user)
+    cash_out_id = create_cash_outs(user.id, cost)
+    btn = {'Подтвердить': f'cash_out_confirm:{cash_out_id}',
+           'Отклонить': f'cash_out_reject:{cash_out_id}'}
+    await callback.message.answer(f'Ваша заявка № {cash_out_id} на вывод {cost} р. отправлена')
+    text = f'Заявка № {cash_out_id} на вывод {cost} р. от @{user.username or user.tg_id}'
+    msg = await bot.send_message(chat_id=conf.tg_bot.GROUP_ID, text=text, reply_markup=custom_kb(2, btn))
+    cash_out = get_cash_out_from_id(cash_out_id)
+    cash_out.set('msg', msg.model_dump_json())
+    await state.clear()

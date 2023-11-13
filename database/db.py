@@ -49,6 +49,7 @@ class User(Base):
     requests: Mapped[list['Request']] = relationship(back_populates='owner', lazy='subquery')
     work_link: Mapped[int] = mapped_column(ForeignKey('work_links.id', ondelete='CASCADE'), nullable=True)
     work_link_requests: Mapped[list['WorkLinkRequest']] = relationship(back_populates='owner', lazy='subquery')
+    cash_outs: Mapped[list['CashOut']] = relationship(back_populates='user', lazy='subquery')
 
     def __str__(self):
         return f'{self.id}. {self.username or "-"} ({self.fio}). Баланс {self.cash}'
@@ -128,6 +129,18 @@ class WorkLinkRequest(Base):
     def __repr__(self):
         return f'{self.id}. {self.owner_id}'
 
+
+class CashOut(Base):
+    __tablename__ = 'cash_outs'
+    id: Mapped[int] = mapped_column(primary_key=True,
+                                    autoincrement='auto')
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'))
+    user: Mapped['User'] = relationship(back_populates='cash_outs', lazy='subquery')
+    cost: Mapped[int] = mapped_column(Integer(), default=0)
+    status: Mapped[int] = mapped_column(Integer(), default=0)
+    moderator_id: Mapped[int] = mapped_column(Integer(), nullable=True)
+    msg: Mapped[json] = mapped_column(JSONB(), nullable=True)
+    reject_text: Mapped[str] = mapped_column(String(1000), nullable=True)
 
 
 if not database_exists(db_url):

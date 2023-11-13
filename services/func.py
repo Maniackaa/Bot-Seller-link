@@ -10,7 +10,7 @@ def get_all_time_cash(owner: User):
     """Подсчет суммы стоимости всех ссылок"""
     session = Session()
     with session:
-        q = select(func.sum(Link.cost)).where(Link.owner == owner)
+        q = select(func.sum(Link.cost)).where(Link.owner_id == owner.id)
         cash = session.execute(q).scalar()
         return cash or 0
 

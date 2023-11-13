@@ -9,7 +9,7 @@ from database.db import User
 from keyboards.keyboards import start_kb, menu_kb
 from lexicon.lexicon import LEXICON
 from services.db_func import get_or_create_user, get_user_from_id, update_user, get_request_from_id, get_link_from_id, \
-    get_work_request_from_id, create_work_link
+    get_work_request_from_id, create_work_link, get_cash_out_from_id
 
 logger, err_log = get_my_loggers()
 
@@ -245,4 +245,58 @@ async def link_confirm_cost(message: Message, state: FSMContext, bot: Bot):
                            text=f'Ваша Заявка № {request.id} принята:\n{worklink}')
     # Меняем сообщение в группе
     await bot.edit_message_text(text=msg.text + f'\nПринято {moderator.username or moderator.tg_id}\n{worklink}',
+                                chat_id=conf.tg_bot.GROUP_ID, message_id=msg.message_id)
+
+
+# Заявки на вывод средств **********************
+class FSMCashOut(StatesGroup):
+    reject = State()
+
+
+@router.callback_query(F.data.startswith('cash_out_confirm:'))
+async def cash_conf(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    cash_out_id = int(callback.data.split('cash_out_confirm:')[-1])
+    cash_out = get_cash_out_from_id(cash_out_id)
+    cash_out.set('status', 1)
+    moderator = get_or_create_user(callback.from_user)
+    cash_out.set('moderator_id', moderator.id)
+    await callback.message.answer(f'Выплата по заявке № {cash_out_id} проведена')
+    # Отправка клиенту
+    client = get_user_from_id(cash_out.user_id)
+    new_cash = client.cash - cash_out.cost
+    await bot.send_message(chat_id=client.tg_id,
+                           text=f'Ваша заявка № {cash_out_id} на сумму {cash_out.cost} выполнена')
+    client.set('cash', new_cash)
+    # Меняем сообщение в группе
+    await bot.edit_message_text(text=callback.message.text + f'\nВыполнено {callback.from_user.username}',
+                                chat_id=conf.tg_bot.GROUP_ID, message_id=callback.message.message_id)
+
+
+@router.callback_query(F.data.startswith('cash_out_reject:'))
+async def cash_conf(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    cash_out_id = int(callback.data.split('cash_out_reject:')[-1])
+    await callback.message.answer(f'Укажите причину отмены заявки № {cash_out_id}')
+    await state.set_state(FSMCashOut.reject)
+    await state.update_data(cash_out_id=cash_out_id, msg=callback.message)
+
+
+@router.message(StateFilter(FSMCashOut.reject))
+async def cash_rej_verdict(message: Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    msg = data['msg']
+    verdict = message.text.strip()
+    await state.update_data(verdict=verdict)
+    cash_out_id = data['cash_out_id']
+    cash_out = get_cash_out_from_id(cash_out_id)
+    cash_out.set('status', -1)
+    moderator = get_or_create_user(message.from_user)
+    cash_out.set('moderator_id', moderator.id)
+    cash_out.set('reject_text', verdict)
+    await message.answer(f'Выплата по заявке № {cash_out_id} отклонена')
+    # Отправка клиенту
+    client = get_user_from_id(cash_out.user_id)
+    await bot.send_message(chat_id=client.tg_id,
+                           text=f'Ваша заявка № {cash_out_id} на сумму {cash_out.cost} ОТКЛОНЕНА:\n{verdict}')
+    # Меняем сообщение в группе
+    await bot.edit_message_text(text=msg.text + f'\nОТКЛОНЕНО {message.from_user.username}',
                                 chat_id=conf.tg_bot.GROUP_ID, message_id=msg.message_id)
